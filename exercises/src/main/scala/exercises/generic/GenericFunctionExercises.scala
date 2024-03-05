@@ -18,19 +18,19 @@ object GenericFunctionExercises {
     // 1a. Implement `swap` which exchanges `first` and `second`
     // such as Pair("John", "Doe").swap == Pair("Doe", "John")
     def swap: Pair[A] =
-      ???
+      Pair(second, first)
 
     // 1b. Implement `map` which applies a function to `first` and `second`
     // such as Pair("John", "Doe").map(_.length) == Pair(4,3)
     def map[To](update: A => To): Pair[To] =
-      ???
+      Pair(update(first), update(second))
 
     // 1c. Implement `zipWith` which merges two Pairs using a `combine` function
     // such as Pair(0, 2).zipWith(Pair(3, 4))((x, y) => x + y) == Pair(3, 6)
     //         Pair(2, 3).zipWith(Pair("Hello ", "World "))(replicate) == Pair("Hello Hello ", "World World World ")
     // Bonus: Why did we separate the arguments of `zipWith` into two set of parentheses?
     def zipWith[Other, To](other: Pair[Other])(combine: (A, Other) => To): Pair[To] =
-      ???
+      Pair(combine(first, other.first), combine(second, other.second))
   }
 
   // 1d. Use the Pair API to decode the content of `secret`.
@@ -42,7 +42,10 @@ object GenericFunctionExercises {
       first = List(103, 110, 105, 109, 109, 97, 114, 103, 111, 114, 80),
       second = List(108, 97, 110, 111, 105, 116, 99, 110, 117, 70)
     )
-  lazy val decoded: Pair[String] = ???
+  val decoded: Pair[String] = secret
+    .map(bytes => new String(bytes.toArray))
+    .map(_.reverse)
+    .swap
 
   // 1e. Use the Pair API to combine `productNames` and `productPrices` into `products`
   // such as products == Pair(Product("Coffee", 2.5), Product("Plane ticket", 329.99))
@@ -51,8 +54,8 @@ object GenericFunctionExercises {
   val productNames: Pair[String]  = Pair("Coffee", "Plane ticket")
   val productPrices: Pair[Double] = Pair(2.5, 329.99)
 
-  lazy val products: Pair[Product] =
-    ???
+  val products: Pair[Product] =
+    productNames.zipWith(productPrices)(Product)
 
   //////////////////////////////////////////////
   // Bonus question (not covered by the video)
@@ -86,7 +89,7 @@ object GenericFunctionExercises {
     //         (isEven && isPositive)(-4) == false
     //         (isEven && isPositive)(-7) == false
     def &&(other: Predicate[A]): Predicate[A] =
-      ???
+      Predicate(value => eval(value) && other.eval(value))
 
     // 2b. Implement `||` that combines two predicates using logical or
     // such as (isEven || isPositive)(12) == true
@@ -94,12 +97,15 @@ object GenericFunctionExercises {
     //         (isEven || isPositive)(-4) == true
     // but     (isEven || isPositive)(-7) == false
     def ||(other: Predicate[A]): Predicate[A] =
-      ???
+      Predicate(value => eval(value) || other.eval(value))
 
     // 2c. Implement `flip` that reverses a predicate
     // such as isEven.flip(11) == true
     def flip: Predicate[A] =
-      ???
+      Predicate(value => !eval(value))
+
+    def contramap[To](zoom: To => A): Predicate[To] =
+      Predicate(user => eval(zoom(user)))
   }
 
   // 2d. Implement `isValidUser`, a predicate which checks if a `User` is:
@@ -115,7 +121,24 @@ object GenericFunctionExercises {
   case class User(name: String, age: Int)
 
   lazy val isValidUser: Predicate[User] =
-    ???
+    byUser(_.age)(isBiggerThan(18)) &&
+      byUser(_.name)(isLongerThan(3) && isCapitalised)
+
+
+  val isAdult: Predicate[User]               = isBiggerThan(18).contramap(_.age)
+  val isUsernameLongerThan3: Predicate[User] = isBiggerThan(3).contramap(_.name.length)
+  val isUsernameCapitalised: Predicate[User] = Predicate(user => user.name.capitalize == user.name)
+
+  val isCapitalised: Predicate[String] = Predicate(text => text.capitalize == text)
+  def isLongerThan(min: Int): Predicate[String] = Predicate(_.length >= min)
+  def byUser[To](zoom: User => To)(subPredicate: Predicate[To]): Predicate[User] =
+    subPredicate.contramap(zoom)
+  def isBiggerThan(min: Int): Predicate[Int] = Predicate(_ >= min)
+
+  object Predicate {
+    def False[A]: Predicate[A] = Predicate(_ => false)
+    def True[A]: Predicate[A]  = Predicate(_ => true)
+  }
 
   ////////////////////////////
   // Exercise 3: JsonDecoder
@@ -126,6 +149,14 @@ object GenericFunctionExercises {
 
   trait JsonDecoder[A] {
     def decode(json: Json): A
+    def map[To](update: A => To): JsonDecoder[To] =
+      json => update(decode(json))
+
+    def orElse(other: JsonDecoder[A]): JsonDecoder[A] =
+      json => Try(decode(json)) match {
+        case Success(value) => value
+        case _ => other.decode(json)
+      }
   }
 
   val intDecoder: JsonDecoder[Int] = new JsonDecoder[Int] {
@@ -149,8 +180,7 @@ object GenericFunctionExercises {
   // but     userIdDecoder.decode("hello") would throw an Exception
   case class UserId(value: Int)
   lazy val userIdDecoder: JsonDecoder[UserId] =
-    ???
-
+    intDecoder.map(UserId)
   // 3b. Implement `localDateDecoder`, a `JsonDecoder` for `LocalDate`
   // such as localDateDecoder.decode("\"2020-03-26\"") == LocalDate.of(2020,3,26)
   // but     localDateDecoder.decode("2020-03-26") would throw an Exception
@@ -158,16 +188,22 @@ object GenericFunctionExercises {
   // Note: You can parse a `LocalDate` using `LocalDate.parse` with a java.time.format.DateTimeFormatter
   // e.g. DateTimeFormatter.ISO_LOCAL_DATE
   lazy val localDateDecoder: JsonDecoder[LocalDate] =
-    ???
+    stringDecoder.map(LocalDate.parse(_, DateTimeFormatter.ISO_LOCAL_DATE))
+
 
   // 3c. Implement `map` a generic function that converts a `JsonDecoder` of `From`
   // into a `JsonDecoder` of `To`.
   // Bonus: Can you re-implement `userIdDecoder` and `localDateDecoder` using `map`
   def map[From, To](decoder: JsonDecoder[From])(update: From => To): JsonDecoder[To] =
-    ???
+    json => update(decoder.decode(json))
 
   // 3d. Move `map` inside of `JsonDecoder` trait so that we can use the syntax
   // `intDecoder.map(_ + 1)` instead of `map(intDecoder)(_ + 1)`
+
+  val longJsonDecoder: JsonDecoder[Long] = json => json.toLong
+
+  val longLocalDateJsonDeconder: JsonDecoder[LocalDate] =
+    json => LocalDate.ofEpochDay(longJsonDecoder.decode(json))
 
   // 3e. Imagine we have to integrate with a weird JSON API where dates are sometimes encoded
   // using a String with the format "yyyy-mm-dd" and sometimes they are encoded using
@@ -178,7 +214,7 @@ object GenericFunctionExercises {
   // Try to think how we could extend JsonDecoder so that we can easily implement
   // other decoders that follow the same pattern.
   lazy val weirdLocalDateDecoder: JsonDecoder[LocalDate] =
-    ???
+    localDateDecoder.orElse(longLocalDateJsonDeconder)
 
   //////////////////////////////////////////////
   // Bonus question (not covered by the video)
@@ -191,8 +227,11 @@ object GenericFunctionExercises {
   // * "\"null\"" into a Some("null")
   // * "null" into "None"
   // Note: you may need to change the function signature
-  def optionDecoder[A]: JsonDecoder[Option[A]] =
-    ???
+  def optionDecoder[A](decoder: JsonDecoder[A]): JsonDecoder[Option[A]] =
+    json => json match {
+      case "null" => None
+      case value => Some(decoder.decode(value))
+    }
 
   // 3g. `JsonDecoder` currently throws an exception if the input is not a valid JSON.
   // How could you change the API so that it doesn't happen anymore?
